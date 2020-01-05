@@ -151,13 +151,13 @@ struct ThreadContext {
 好的，这部分应该很难，还记得吗？Windows 从不会把事情变得太简单来让我们感到失望。你会看到，当我们从 128 位寄存器中移出数据时，我们需要使用一些特殊的汇编指令。其中有几个 _大多数_ 都在做同样的事：
 
 * `movdqa` [move double quad word aligned](https://www.felixcloutier.com/x86/movdqa:vmovdqa32:vmovdqa64)
-* `movdqu`[move double quad word unaligned](https://www.felixcloutier.com/x86/movdqu:vmovdqu8:vmovdqu16:vmovdqu32:vmovdqu64)
-* `movaps`[move aligned packed single-precision floating point value](https://www.felixcloutier.com/x86/movaps)
-* `movups`[move unaligned packed single-precision floating point value](https://www.felixcloutier.com/x86/movups)
+* `movdqu` [move double quad word unaligned](https://www.felixcloutier.com/x86/movdqu:vmovdqu8:vmovdqu16:vmovdqu32:vmovdqu64)
+* `movaps` [move aligned packed single-precision floating point value](https://www.felixcloutier.com/x86/movaps)
+* `movups` [move unaligned packed single-precision floating point value](https://www.felixcloutier.com/x86/movups)
 
 如你所见，大多数方法都有 `aligned` 和 `unaligned` 变体。 区别在于，`*ps` 类型的指令针对浮点值，而 `*dq/*dq` 类型的指令针对整数。 现在两者都可以使用，但是如果你单击 Microsoft 的参考资料，你可能会注意到 `XMM` 用于浮点值，因此 `*ps` 类型的指令是我们应该使用的正确指令。
 
-从历史上看，`aligned` 版本在大多数情况下要快一些，因此在上下文切换中会优先使用。但是，据我了解的最新信息是，**在性能方面，最近的 6 代 CPU 实际上都是一样的**。
+从历史上看，`aligned` 版本在大多数情况下要快一些，因此在上下文切换中会优先使用。但是，据我了解的最新信息是，**在性能方面，它们在最近的 6 代 CPU 里实际上都是一样的**。
 
 > 如果你想了解有关新旧处理器上不同指令成本的更多信息，请查看[Agner Fog 的指令表](https://www.agner.org/optimize/instruction_tables.pdf)。
 
