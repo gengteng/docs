@@ -9,9 +9,9 @@
 
 我们的示例适用于 OSX、Linux 和 Windows，但我之前曾指出，虽然这个实现在 Windows 上可以运行，但并不正确。因为我一直致力于使这个实现在所有三个平台上都能正确运行，所以我将在本章中介绍我们还需要做的事情。
 
-您可能想知道为什么我没有在原始代码中包含此内容，其原因是，这实际上与解释我想探索的主要概念没有任何关系。
+你可能想知道为什么我没有在原始代码中包含此内容，其原因是，这实际上与解释我想探索的主要概念没有任何关系。
 
-在这里，我试图进一步探讨如何为 Windows 正确设置栈并进行适当的上下文切换。即使我们可能无法一路写出完美的实现，也有大量信息和参考供您进一步探索，我将在这里列出其中的一些：
+在这里，我试图进一步探讨如何为 Windows 正确设置栈并进行适当的上下文切换。即使我们可能无法一路写出完美的实现，也有大量信息和参考供你进一步探索，我将在这里列出其中的一些：
 
 * [Microsoft x64 软件约定](https://docs.microsoft.com/en-us/cpp/build/x64-software-conventions?view=vs-2019)
 * [Win64 / AMD64 API](https://wiki.lazarus.freepascal.org/Win64/AMD64_API) - psABi 与 Win64 之间差异的简要概述
@@ -31,9 +31,9 @@
 
 除了 `XMM` 寄存器，`rdi` 和 `rsi` 寄存器在 Windows 上也是非易失性的，这意味着它们已由被调用者保存（在Linux上，这些寄存器用于第一个和第二个函数参数），因此我们也需要添加它们。
 
-不过有一个注意事项：`XMM` 寄存器是 128 位而不是 64 位的。Rust 有 `u128` 类型，但是我们将使用 `[u64; 2]` 来避免可能导致的某些对齐问题。先不用担心，我会在下面进一步解释。
+不过有一个注意事项：`XMM` 寄存器是 128 位而不是 64 位的。Rust 有 `u128` 类型，但是我们将使用 `[u64; 2]` 来避免 _可能_ 导致的某些对齐问题。先不用担心，我会在下面进一步解释。
 
-现在，我们的 `ThreadContext` 如下所示：
+修改之后，我们的 `ThreadContext` 如下所示：
 
 ```rust
 #[cfg(target_os="windows")]
@@ -64,17 +64,18 @@ struct ThreadContext {
 
 ### 线程信息块
 
-第二部分文献不多。 实际上，我一直在努力确切地验证跳过此操作将如何导致现代 Windows 失败，但是值得信赖的消息来源对此有足够的引用，我毫无疑问我们需要解决这一问题。
-您会看到，Windows希望将有关当前正在运行的线程的某些信息存储在它称为 “线程信息块”（称为 NT_TIB）中。 具体来说，它希望访问 `%gs` 寄存器中有关堆栈基础和堆栈限制的信息。
+第二部分相关文档不多。 实际上，我一直在努力验证在现代 Windows 上如果直接跳过这个问题是如何导致失败的，不过已经有了来自[值得信赖的信息来源](https://github.com/boostorg/context/blob/develop/src/asm/ontop_x86_64_ms_pe_gas.asm#L116-L129)的[充足的参考资料](https://probablydance.com/2013/02/20/handmade-coroutines-for-windows/)，我毫无疑问我们需要解决这一问题。
 
-> 您可能会问的 GS 寄存器是什么？
-> 我发现的答案有些困惑。 显然，这些段寄存器（x64上的GS和x86上的FS）是 Intel 旨在[允许程序访问许多不同的内存段]（https://stackoverflow.com/questions/10810203/what-is-the-fs- gs-register-intended-for），它们原本打算作为永久性虚拟存储的一部分。 现代操作系统不会以这种方式使用这些寄存器，因为我们只能访问自己的进程内存（对于程序员来说，它们看起来像是“扁平”内存）。 当还不清楚这将是主流模型时，这些寄存器将允许由不同的操作系统进行不同的实现。 如果您感到好奇，请参阅 [Multics操作系统上的Wikipedia文章]（https://en.wikipedia.org/wiki/Multics）。
+你会看到，Windows希望将有关当前正在运行的线程的某些信息存储在它称为 “线程信息块（`Thread Information Block`）”（称为 NT_TIB）的结构中。具体来说，它希望访问 `%gs` 寄存器中有关 `Stack Base` 和 `Stack Limit` 的信息。
 
-这意味着操作系统可以自由地将这些段寄存器用于其认为适当的用途。 Windows将有关当前正在运行的线程的信息存储在GS寄存器中，而Linux使用这些寄存器进行线程本地存储。
+> 你可能会问 GS 寄存器是什么？
+> 我找到的答案有些让人困惑。 显然，这些段寄存器（x64 上的 GS 和 x86 上的 FS）是 Intel 旨在[允许程序访问许多不同的内存段](https://stackoverflow.com/questions/10810203/what-is-the-fs- gs-register-intended-for)而设计的，它们原本打算作为永久性虚拟存储的一部分。现代操作系统不会以这种方式使用这些寄存器，因为我们只能访问自己的进程内存（对于程序员来说，它们看起来像是 “扁平” 内存）。当还不清楚这将是主流模型时，这些寄存器将允许由不同的操作系统进行不同的实现。如果你感到好奇，请参阅 [有关 Multics 操作系统的 Wikipedia 页](https://en.wikipedia.org/wiki/Multics)。
 
-当我们切换线程时，我们应该提供期望的关于[Stack Base和Stack Limit]的信息（https://en.wikipedia.org/wiki/Win32_Thread_Information_Block）。
+这意味着操作系统可以自由地将这些段寄存器用于其认为适当的用途。 Windows 将当前正在运行线程的相关信息存储在 GS 寄存器中，而 Linux 使用这些寄存器进行线程本地存储。
 
-我们的 `ThreadContext` 现在是这样的:
+当我们切换线程时，我们应该提供其所需的关于[Stack Base 和 Stack Limit](https://en.wikipedia.org/wiki/Win32_Thread_Information_Block)的信息。
+
+那么我们的 `ThreadContext` 就应该是这样的:
 
 ```rust
 #[cfg(target_os="windows")]
@@ -105,18 +106,17 @@ struct ThreadContext {
 }
 ```
 
-请注意，我们在所有Windows特定的函数和结构上都使用了 `#[cfg(target_os="windows")]` 属性，这意味着我们需要为“原始”定义提供一个属性，以确保为所有其他定义编译它们 目标比Windows：`#[cfg(not(target_os="windows"))]`。
+> 请注意，我们在所有Windows特定的函数和结构上都使用了 `#[cfg(target_os="windows")]` 属性，这意味着我们需要为最初的结构体定义增加一个属性，以确保能在所有其它非 Windows 平台上编译：`#[cfg(not(target_os="windows"))]`。
 
-我将字段命名为 `stack_start` 和 `stack_end`，是因为我发现栈在顶部开始，然后向下扩展到底部，因此更容易解析。
-
-现在要实现这一点，我们需要对我们的 `spawn()` 函数进行更改以实际提供以下信息：
+我将字段命名为 `stack_start` 和 `stack_end`，因为我发现这样更容易肉眼解析，我们都知道栈从顶部开始，然后向下扩展到底部。
 
 ### Windows 栈
 
 ![stack-allocation](./windows-stack.png)
 
-你看，由于Rust设置了堆栈框架，因此我们只需要关心将％rspand返回地址放在哪里，这与 psABI 中的内容几乎相同。 Win64 和 psABI 之间的差异在其他地方，Rust 为我们解决了所有这些差异。
-现在要实现这一点，我们需要对 `spawn()` 函数进行更改，以实际提供此信息并设置我们的堆栈。
+因为 Rust 为我们设置好了栈帧，所以我们只需要关心将 `%rsp` 和返回地址放在哪里，这与 psABI 中的内容几乎相同。Win64 和 psABI 在其它方面还存在差异，而 Rust 为我们解决了目前所有差异。
+
+现在要继续实现我们的代码，就需要对 `spawn()` 函数进行更改，来真正提供这些新增信息并设置我们的栈。
 
 ```rust
     #[cfg(target_os = "windows")]
@@ -130,7 +130,7 @@ struct ThreadContext {
         let size = available.stack.len();
         let s_ptr = available.stack.as_mut_ptr();
 
-        // see: https://docs.microsoft.com/en-us/cpp/build/stack-usage?view=vs-2019#stack-allocation
+        // 参考: https://docs.microsoft.com/en-us/cpp/build/stack-usage?view=vs-2019#stack-allocation
         unsafe {
             ptr::write(s_ptr.offset((size - 24) as isize) as *mut u64, guard as u64);
             ptr::write(s_ptr.offset((size - 32) as isize) as *mut u64, f as u64);
@@ -144,30 +144,32 @@ struct ThreadContext {
 }
 ```
 
-如您所见，我们提供了指向堆栈开始的指针和指向堆栈结束的指针。
+如你所见，我们提供了指向栈开始的指针和指向栈结束的指针。
 
 #### 可能的对齐问题
 
-好吧，这应该很难，还记得吗？ Windows不会令我们感到失望，这让事情变得太简单了。 您会看到，当我们从 128 位寄存器中移出数据时，我们需要使用一些特殊的汇编指令。 其中有几个大多数都做相同的事情：
+好的，这部分应该很难，还记得吗？Windows 从不会把事情变得太简单来让我们感到失望。你会看到，当我们从 128 位寄存器中移出数据时，我们需要使用一些特殊的汇编指令。其中有几个 _大多数_ 都在做同样的事：
 
 * `movdqa` [move double quad word aligned](https://www.felixcloutier.com/x86/movdqa:vmovdqa32:vmovdqa64)
 * `movdqu`[move double quad word unaligned](https://www.felixcloutier.com/x86/movdqu:vmovdqu8:vmovdqu16:vmovdqu32:vmovdqu64)
 * `movaps`[move aligned packed single-precision floating point value](https://www.felixcloutier.com/x86/movaps)
 * `movups`[move unaligned packed single-precision floating point value](https://www.felixcloutier.com/x86/movups)
 
-如您所见，大多数方法都有 `aligned` 和 `unaligned` 变量。 区别在于，`*ps` 类型的指令针对浮点值，而 `*dq/*dq` 类型的指令针对整数。 现在两者都可以使用，但是如果您单击 Microsoft 参考，您可能会注意到 `XMM` 用于浮点值，因此 `*ps` 类型的指令是我们应该使用的正确指令。
+如你所见，大多数方法都有 `aligned` 和 `unaligned` 变体。 区别在于，`*ps` 类型的指令针对浮点值，而 `*dq/*dq` 类型的指令针对整数。 现在两者都可以使用，但是如果你单击 Microsoft 的参考资料，你可能会注意到 `XMM` 用于浮点值，因此 `*ps` 类型的指令是我们应该使用的正确指令。
 
-从历史上看，`aligned` 版本在大多数情况下要快一些，因此在上下文切换中会优先使用。但是，据我了解，最新信息是，在性能方面，最近 6 代 CPU 事实上相同。
+从历史上看，`aligned` 版本在大多数情况下要快一些，因此在上下文切换中会优先使用。但是，据我了解的最新信息是，**在性能方面，最近的 6 代 CPU 实际上都是一样的**。
 
-> 如果您想了解有关新旧处理器上不同指令成本的更多信息，请查看[Agner Fog 的指令表](https://www.agner.org/optimize/instruction_tables.pdf)。
+> 如果你想了解有关新旧处理器上不同指令成本的更多信息，请查看[Agner Fog 的指令表](https://www.agner.org/optimize/instruction_tables.pdf)。
 
-但是，由于在我遇到的所有参考实现中都使用了对齐的指令，因此尽管它们使我们暴露了一些额外的复杂性，我们也将使用它们，我们还在学习东西，不是吗？
-对齐是指它们从/向/读到的存储器是16字节对齐的。
+但是，由于在我遇到的所有参考实现中都使用了对齐的指令，因此尽管它们给我们暴露了一些额外的复杂性，我们还是会使用它们，我们也学到东西了，不是吗？
+
+使用对齐指令，是指它们读写的内存是 16 字节对齐的。
+
 现在，我解决此问题的方法是将需要对齐的字段推送到结构的开头，并添加新属性 `#[repr(align(16))]`。
 
-> `#[repr(align(16))]` 属性确保我们的结构以 16 字节对齐的内存地址开始，因此当我们在程序集的开始写入 `XMM6` 时，它已经是 16 字节对齐的，并且由于 128 被 16 整除，其余的字段也是如此。
-但是，这很重要，因为我们现在有两个不同的字段大小，我们的编译器可能会选择“填充”我们的字段，但现在暂时不会发生这种情况，但是将较大的字段推入开始将使后期发生这种情况的风险降到最低。
-我们还避免手动将填充成员添加到结构中，因为在 `XMM` 字段之前有7 个 `u64` 字段可以防止它们与 16 对齐（请记住，`repr(C)` 属性可确保编译器不会对我们的字段进行重新排序）。
+> `#[repr(align(16))]` 属性确保我们的结构以 16 字节对齐的内存地址开始，因此当我们在汇编代码一开始写 `XMM6` 寄存器时，它已经是 16 字节对齐的，并且由于 128 被 16 整除，其余的字段也是如此。
+但是（这可能很重要），因为我们现在有两种不同大小的字段，我们的编译器可能会选择“填充”我们的字段，但现在暂时不会发生这种情况，但是将较大的字段放到前面将使后期发生这种情况的风险降到最低。
+我们也要避免手动将填充成员添加到结构中，因为在 `XMM` 字段之前有 7 个 `u64` 字段可以防止它们与 16 对齐（请记住，`repr(C)` 属性确保编译器不会对我们的字段进行重新排序）。
 
 修改过后我们的 `Threadcontext` 将变成这样：
 
@@ -201,7 +203,7 @@ struct ThreadContext {
 }
 ```
 
-最后我们需要修改 `switch()` 函数并更新我们的汇编代码。解释了这么多，这应该很简单：
+最后我们需要修改 `switch()` 函数并更新我们的汇编代码。上文已经解释了这么多，应该很简单了：
 
 ```rust
 #[cfg(target_os = "windows")]
@@ -267,17 +269,17 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
 }
 ```
 
-如您所见，我们的代码变得更长了一些。 一旦确定了存储位置就很简单，但是它确实增加了很多代码。
+如你所见，我们的代码变得更长了一些。一旦确定了存储位置就很简单，但是它确实增加了很多代码。
 
-> 我们的内联汇编程序不允许我们从一个内存偏移量 `mov` 到另一个内存偏移量，因此我们需要通过一个寄存器。 我选择了 `rax` 寄存器（返回值的默认寄存器），但可以为此选择任何通用寄存器。
+> 我们的内联汇编程序不允许我们从一个内存偏移量 `mov` 到另一个内存偏移量，因此我们需要经由一个寄存器来实现。我选择了 `rax` 寄存器（返回值的默认寄存器），但你可以为此选择任何通用的寄存器。
 
 ### 结论
 
-所以这就是我们需要做的。 如您所见，我们在这里实际上并没有做任何新的事情，困难的部分是弄清楚Windows的工作方式以及它的期望，但是既然我们已经正确完成了工作，那么我们应该为所有三个平台都提供一个相当完整的上下文切换。
+所以这就是我们需要做的。如你所见，我们在这里实际上并没有做任何新的事情，困难的部分是弄清楚Windows 的工作方式以及它期望你做的事，不过我们已经正确完成了支持 Windows 的工作，我们应该为所有三个平台都提供了相当完整的上下文切换的实现。
 
 ### 最终的代码
 
-在最后我合并了我们需要针对 Windows 进行不同编译的所有代码，因此您不必阅读前 200 行代码，因为与前几章的内容相同。我希望你能理解为什么我选择为此单独写一章。
+在最后我合并了我们需要针对 Windows 进行不同编译的所有代码，因此你不必阅读前 200 行代码，因为与前几章的内容相同。我希望你能理解为什么我选择为此单独写一章。
 
 > 你也可以在[这个仓库的Windows分支](https://github.com/cfsamson/example-greenthreads/tree/windows)找到这份代码.
 
