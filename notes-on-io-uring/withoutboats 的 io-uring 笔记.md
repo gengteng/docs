@@ -77,3 +77,7 @@ buffer.copy_from_slice(..);
 io-uring 在 io 的实际管理方式上具有很大的灵活性。你是否有一个线程来管理所有完成情况，还是在提交事件时以机会方式管理完成情况？我们应该仅对文件系统 IO 进行 io-uring 并等待 epoll 实例完成，还是将所有内容移至 io-uring？我们如何与仍在使用 epoll 的库集成在一起？你想如何一起对 io 事件进行排序（io-uring提供了多种方式）？你的程序有单个还是多个？IO 超时比用户空间超时好吗？
 
 我希望从长远来看，我们可以使最终用户能够轻松地按照这些思路进行选择，并为 reactor 的构建者提供其特定用例所需的行为。等到我们把它搞清楚了，Linux 上异步 IO 的激动人心的时代就会来临。
+
+译者注：
+
+> withoutboats 的 io-uring 库已经发布了 https://github.com/withoutboats/ringbahn 。
